@@ -116,6 +116,8 @@ Kirigami.FormLayout {
 
     Label {
         Kirigami.FormData.label: ""
+        Layout.fillWidth: true
+        wrapMode: Text.WordWrap
         visible: providerTab.configRoot.isAdaptive
         text: i18n("Read-only while Adaptive mode is on - turn it off above to choose a specific provider.")
         opacity: 0.65
@@ -125,6 +127,8 @@ Kirigami.FormLayout {
     // Provider sub-label
     Label {
         Kirigami.FormData.label: ""
+        Layout.fillWidth: true
+        wrapMode: Text.WordWrap
         visible: providerTab.configRoot.isAdaptive === false
         opacity: 0.6
         font.pixelSize: Kirigami.Theme.smallFont.pixelSize
@@ -212,6 +216,7 @@ Kirigami.FormLayout {
             TextField {
                 id: apiKeyField
                 Layout.fillWidth: true
+                Layout.minimumWidth: 0
                 placeholderText: {
                     if (providerTab.configRoot.isOpenWeather)
                         return i18n("Enter your OpenWeatherMap API key");

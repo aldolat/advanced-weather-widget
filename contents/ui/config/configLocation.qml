@@ -1499,6 +1499,7 @@ KCM.SimpleKCM {
                     // ── Auto-detect radio ──────────────────────────────────
                     ColumnLayout {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         spacing: 4
 
                         RowLayout {
@@ -1527,10 +1528,14 @@ KCM.SimpleKCM {
 
                         RowLayout {
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             Layout.leftMargin: 24
                             spacing: 8
                             Label {
                                 Layout.fillWidth: true
+                                // Without an explicit minimum the label keeps its
+                                // one-line width and is clipped in a narrow window.
+                                Layout.minimumWidth: 0
                                 wrapMode: Text.WordWrap
                                 opacity: 0.78
                                 text: root._positioningAvailable ? (root.autoDetectBusy ? i18n("Detecting…") : (root.autoDetectStatus.length > 0 ? root.autoDetectStatus : i18n("Location detection is depending on system configuration and permissions."))) : i18n("GPS / GeoClue2 unavailable (install qt6-qtlocation for best accuracy). Using IP-based detection.")
@@ -1557,46 +1562,60 @@ KCM.SimpleKCM {
                         ButtonGroup.group: locationModeGroup
                         onClicked: root.cfg_autoDetectLocation = false
                     }
-                    RowLayout {
+                    GridLayout {
+                        id: manualLocRow
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         Layout.leftMargin: 24
-                        spacing: 8
+                        columnSpacing: 8
+                        rowSpacing: 6
                         visible: !root.cfg_autoDetectLocation
+                        // Single line only while the hint and all three buttons fit
+                        // next to each other; otherwise stack them (the buttons wrap).
+                        columns: width >= manualLocHint.implicitWidth + manualLocButtons.implicitWidth + columnSpacing ? 2 : 1
                         Label {
+                            id: manualLocHint
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             wrapMode: Text.WordWrap
                             opacity: 0.78
                             text: i18n("Search for a location or choose it on the map.")
                         }
-                        Button {
-                            text: i18n("Search Location")
-                            icon.name: "edit-find"
-                            enabled: !root.cfg_autoDetectLocation
-                            ToolTip.visible: hovered
-                            ToolTip.text: i18n("Search by city or place name. Results show the location name, region, and country, and are suitable for general city-level forecasts rather than exact street-level placement.")
-                            onClicked: root.openSearchPage()
-                        }
-                        Button {
-                            text: i18n("Choose on Map")
-                            icon.name: "map-flat"
-                            enabled: !root.cfg_autoDetectLocation
-                            ToolTip.visible: hovered
-                            ToolTip.text: i18n("Pick an exact spot on the map for a more local forecast, such as your neighborhood block or a specific landmark.")
-                            onClicked: {
-                                if (!root._qtLocationAvailable) {
-                                    missingLocationDialog.open();
-                                    return;
-                                }
-                                root.openMapPage();
+                        Flow {
+                            id: manualLocButtons
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            spacing: 8
+                            Button {
+                                text: i18n("Search Location")
+                                icon.name: "edit-find"
+                                enabled: !root.cfg_autoDetectLocation
+                                ToolTip.visible: hovered
+                                ToolTip.text: i18n("Search by city or place name. Results show the location name, region, and country, and are suitable for general city-level forecasts rather than exact street-level placement.")
+                                onClicked: root.openSearchPage()
                             }
-                        }
-                        Button {
-                            text: i18n("Enter Manually")
-                            icon.name: "document-edit"
-                            enabled: !root.cfg_autoDetectLocation
-                            ToolTip.visible: hovered
-                            ToolTip.text: i18n("Enter exact latitude, longitude, and optional elevation for a more local forecast. You can copy coordinates from OpenStreetMap, GeoNames, or Google Maps.")
-                            onClicked: root.openManualPage()
+                            Button {
+                                text: i18n("Choose on Map")
+                                icon.name: "map-flat"
+                                enabled: !root.cfg_autoDetectLocation
+                                ToolTip.visible: hovered
+                                ToolTip.text: i18n("Pick an exact spot on the map for a more local forecast, such as your neighborhood block or a specific landmark.")
+                                onClicked: {
+                                    if (!root._qtLocationAvailable) {
+                                        missingLocationDialog.open();
+                                        return;
+                                    }
+                                    root.openMapPage();
+                                }
+                            }
+                            Button {
+                                text: i18n("Enter Manually")
+                                icon.name: "document-edit"
+                                enabled: !root.cfg_autoDetectLocation
+                                ToolTip.visible: hovered
+                                ToolTip.text: i18n("Enter exact latitude, longitude, and optional elevation for a more local forecast. You can copy coordinates from OpenStreetMap, GeoNames, or Google Maps.")
+                                onClicked: root.openManualPage()
+                            }
                         }
                     }
 
@@ -1755,19 +1774,25 @@ KCM.SimpleKCM {
 
                                     ColumnLayout {
                                         Layout.fillWidth: true
+                                        // Let the text column shrink so the row never gets
+                                        // wider than the window (which pushed the buttons
+                                        // on the right out of view).
+                                        Layout.minimumWidth: 0
                                         spacing: 0
 
                                         Label {
                                             Layout.fillWidth: true
+                                            Layout.minimumWidth: 0
                                             visible: !savedLocDelegateRoot._renaming
                                             text: savedLocDelegateRoot.name.length > 0 ? savedLocDelegateRoot.name : i18n("Unknown")
-                                            elide: Text.ElideRight
+                                            wrapMode: Text.Wrap
                                             font.bold: savedLocDelegateRoot._isActive
                                             color: savedLocDelegateRoot._isActive ? Kirigami.Theme.highlightColor : Kirigami.Theme.textColor
                                         }
                                         TextField {
                                             id: renameField
                                             Layout.fillWidth: true
+                                            Layout.minimumWidth: 0
                                             visible: savedLocDelegateRoot._renaming
                                             onVisibleChanged: {
                                                 if (visible) {
@@ -1781,6 +1806,8 @@ KCM.SimpleKCM {
                                         }
                                         Label {
                                             Layout.fillWidth: true
+                                            Layout.minimumWidth: 0
+                                            wrapMode: Text.Wrap
                                             text: {
                                                 var parts = [savedLocDelegateRoot.lat.toFixed(4) + "°, " + savedLocDelegateRoot.lon.toFixed(4) + "°"];
                                                 if (savedLocDelegateRoot.altitude !== 0)
@@ -1791,7 +1818,6 @@ KCM.SimpleKCM {
                                             }
                                             opacity: 0.6
                                             font.pointSize: Kirigami.Theme.smallFont.pointSize
-                                            elide: Text.ElideRight
                                         }
                                     }
 

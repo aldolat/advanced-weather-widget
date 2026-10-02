@@ -31,6 +31,26 @@ Kirigami.FormLayout {
     /** Reference to the root KCM (configGeneral) for cfg_* properties, functions and state */
     required property var configRoot
 
+    // A Switch whose label wraps onto several lines instead of forcing the
+    // whole page wider than the (resizable) settings window. A plain Switch
+    // keeps its full single-line text width and cannot shrink, so a long
+    // label gets clipped when the window is narrow.
+    component WrappingSwitch: Switch {
+        id: wrappingSwitch
+        Layout.fillWidth: true
+        Layout.minimumWidth: 0
+        contentItem: Label {
+            text: wrappingSwitch.text
+            font: wrappingSwitch.font
+            wrapMode: Text.Wrap
+            verticalAlignment: Text.AlignVCenter
+            leftPadding: wrappingSwitch.indicator && !wrappingSwitch.mirrored
+                ? wrappingSwitch.indicator.width + wrappingSwitch.spacing : 0
+            rightPadding: wrappingSwitch.indicator && wrappingSwitch.mirrored
+                ? wrappingSwitch.indicator.width + wrappingSwitch.spacing : 0
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // SECTION: Radar
     // ═══════════════════════════════════════════════════════════════
@@ -43,7 +63,7 @@ Kirigami.FormLayout {
         Layout.preferredHeight: Kirigami.Units.smallSpacing
     }
 
-    Switch {
+    WrappingSwitch {
         Kirigami.FormData.label: ""
         text: i18n("Show Radar tab in widget")
         checked: radarTab.configRoot.cfg_radarEnabled
@@ -54,7 +74,7 @@ Kirigami.FormLayout {
         Layout.preferredHeight: Kirigami.Units.smallSpacing
     }
 
-    Switch {
+    WrappingSwitch {
         Kirigami.FormData.label: ""
         visible: radarTab.configRoot.cfg_radarEnabled
         text: i18n("Workaround radar map crashes on hybrid-GPU systems (EXPERIMENTAL)")
