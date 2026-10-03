@@ -711,6 +711,9 @@ KCM.SimpleKCM {
         req.onreadystatechange = function () {
             if (req.readyState !== XMLHttpRequest.DONE)
                 return;
+            console.warn("[LocationSearch] Nominatim reverse HTTP " + req.status + " " + req.statusText);
+            if (req.status !== 200)
+                console.warn("[LocationSearch] Nominatim reverse body: " + String(req.responseText).substring(0, 400));
             if (req.status === 200) {
                 var data = JSON.parse(req.responseText);
                 if (data && data.address) {
