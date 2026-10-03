@@ -98,7 +98,7 @@ ColumnLayout {
                     } catch (e) { /* ignore */ }
 
                     // Update config with missing metadata if needed. This handles cases where
-                    // the search provider (e.g. Nominatim) doesn't supply timezone or altitude.
+                    // the search provider (Photon) doesn't supply timezone or altitude.
                     if (data.timezone && (!configRoot.cfg_timezone || configRoot.cfg_timezone.length === 0)) {
                         configRoot.cfg_timezone = data.timezone;
                     }
@@ -143,6 +143,7 @@ ColumnLayout {
 
     Component.onCompleted: Qt.callLater(_fetchCurrentInfo)
 
+    // Location search uses Photon only (photon.komoot.io, OpenStreetMap data).
     function performSearch(query) {
         if (!query || query.trim().length < 2) {
             searchResults = [];
@@ -154,35 +155,80 @@ ColumnLayout {
         }
         var q = query.trim();
         var requestId = ++searchRequestId;
-        console.warn("[LocationSearch] #" + requestId + " start, query='" + q + "'");
         searchBusy = true;
         searchResults = [];
         selectedResult = null;
         selectedIndex = -1;
         resultsList.currentIndex = -1;
-        var collected = [], pending = 0;
-        var nominatimCount = 0;     // items Nominatim returned (0 on error or empty reply)
-        var photonTried = false;    // Photon is only a fallback, tried at most once per search
 
-        function queueRequest() {
-            pending += 1;
-        }
-
-        function done() {
-            pending -= 1;
-            if (pending > 0)
+        // lang=default: every place is named in its own local language (София, not Sofia).
+        // Without it Photon uses the Accept-Language header of the request, which here
+        // follows the system locale and gives English names.
+        var url = "https://photon.komoot.io/api?q=" + encodeURIComponent(q) + "&limit=15&lang=default";
+        console.warn("[LocationSearch] #" + requestId + " Photon GET " + url);
+        var req = new XMLHttpRequest();
+        req.open("GET", url);
+        req.onreadystatechange = function () {
+            if (req.readyState !== XMLHttpRequest.DONE)
                 return;
-            if (requestId !== searchRequestId)
-                return;
-            if (!photonTried && nominatimCount === 0) {
-                // Nominatim failed (e.g. HTTP 403 on a blocked/VPN IP) or found nothing.
-                // It is the only provider that matches non-Latin names well, so try Photon.
-                photonTried = true;
-                console.warn("[LocationSearch] #" + requestId + " Nominatim gave no results, trying Photon fallback");
-                fetchPhoton();
+            if (requestId !== searchRequestId) {
+                console.warn("[LocationSearch] #" + requestId + " Photon reply ignored (stale), HTTP " + req.status);
                 return;
             }
-            console.warn("[LocationSearch] #" + requestId + " finished, total collected=" + collected.length);
+            console.warn("[LocationSearch] #" + requestId + " Photon HTTP " + req.status + " " + req.statusText);
+            var collected = [];
+            if (req.status === 200) {
+                try {
+                    var feats = JSON.parse(req.responseText).features || [];
+                    // Prefer settlements / administrative areas over streets, shops, etc.
+                    var places = feats.filter(function (f) {
+                        var k = f.properties && f.properties.osm_key;
+                        return k === "place" || k === "boundary";
+                    });
+                    if (places.length === 0)
+                        places = feats;
+                    console.warn("[LocationSearch] #" + requestId + " Photon returned " + feats.length + " item(s), kept " + places.length);
+                    places.forEach(function (f) {
+                        var pr = f.properties || {};
+                        var c = f.geometry && f.geometry.coordinates;   // GeoJSON order: [lon, lat]
+                        if (!c || c.length < 2 || !pr.name)
+                            return;
+                        var fix = configRoot._fixMixedScript;
+                        var pName = fix(pr.name);
+                        var pCounty = fix(pr.county);
+                        var pState = fix(pr.state);
+                        var pCountry = fix(pr.country);
+                        // Result title: "name, county, state, country" (a part equal to an earlier one is skipped)
+                        var parts = [];
+                        [pName, pCounty, pState, pCountry].forEach(function (part) {
+                            if (part.length > 0 && parts.every(function (x) {
+                                return x.toLowerCase() !== part.toLowerCase();
+                            }))
+                                parts.push(part);
+                        });
+                        var title = parts.join(", ");
+                        console.warn("[LocationSearch] #" + requestId + " Photon item: " + title);
+                        collected.push({
+                            name: pName,
+                            admin1: pState,
+                            district: pCounty,
+                            country: pCountry,
+                            countryCode: (pr.countrycode || "").toUpperCase(),
+                            latitude: parseFloat(c[1]),
+                            longitude: parseFloat(c[0]),
+                            timezone: "",
+                            elevation: undefined,
+                            provider: "Photon",
+                            providerKey: "photon",
+                            localizedDisplayName: title
+                        });
+                    });
+                } catch (e) {
+                    console.warn("[LocationSearch] #" + requestId + " Photon parse error: " + e);
+                }
+            } else {
+                console.warn("[LocationSearch] #" + requestId + " Photon body: " + String(req.responseText).substring(0, 400));
+            }
             var dedup = {}, finalList = [];
             for (var i = 0; i < collected.length; ++i) {
                 var item = collected[i];
@@ -197,178 +243,13 @@ ColumnLayout {
             selectedResult = null;
             selectedIndex = -1;
             resultsList.currentIndex = -1;
-        }
-
-        function fetchNominatim() {
-            queueRequest();
-            var req = new XMLHttpRequest();
-            var hasCyrillic = /[\u0400-\u04FF]/.test(q);
-            var lang = hasCyrillic ? "bg,ru,uk,sr,mk,en;q=0.3" : (configRoot.preferredLanguage.length > 0 ? configRoot.preferredLanguage + ",en;q=0.8" : "en");
-            var url = "https://nominatim.openstreetmap.org/search" + "?q=" + encodeURIComponent(q) + "&format=json" + "&limit=20" + "&addressdetails=1" + "&accept-language=" + lang;
-            console.warn("[LocationSearch] #" + requestId + " Nominatim GET " + url);
-            req.open("GET", url);
-            req.setRequestHeader("User-Agent", "AdvancedWeatherWidget/1.0 (KDE Plasma plasmoid)");
-            req.onreadystatechange = function () {
-                if (req.readyState !== XMLHttpRequest.DONE)
-                    return;
-                if (requestId !== searchRequestId) {
-                    console.warn("[LocationSearch] #" + requestId + " Nominatim reply ignored (stale), HTTP " + req.status);
-                    return;
-                }
-                console.warn("[LocationSearch] #" + requestId + " Nominatim HTTP " + req.status + " " + req.statusText);
-                if (req.status === 200) {
-                    try {
-                        var items = JSON.parse(req.responseText);
-                        console.warn("[LocationSearch] #" + requestId + " Nominatim returned " + items.length + " item(s)");
-                        nominatimCount = items.length;
-                        items.forEach(function (item) {
-                            var a = item.address || {};
-                            var city = a.city || a.town || a.village || a.hamlet || a.suburb || a.municipality || a.county || "";
-                            var district = a.state_district || a.county || "";
-                            var state = a.state || a.region || "";
-                            var country = a.country || "";
-                            collected.push({
-                                name: city.length > 0 ? city : item.display_name,
-                                admin1: state,
-                                district: district,
-                                country: country,
-                                countryCode: (a.country_code || "").toUpperCase(),
-                                latitude: parseFloat(item.lat),
-                                longitude: parseFloat(item.lon),
-                                timezone: "",
-                                elevation: undefined,
-                                provider: "OpenStreetMap",
-                                providerKey: "nominatim",
-                                localizedDisplayName: item.display_name
-                            });
-                        });
-                    } catch (e) {
-                        console.warn("[LocationSearch] #" + requestId + " Nominatim parse error: " + e);
-                    }
-                } else {
-                    console.warn("[LocationSearch] #" + requestId + " Nominatim body: " + String(req.responseText).substring(0, 400));
-                }
-                done();
-            };
-            req.send();
-        }
-
-        function fetchOpenMeteo() {
-            queueRequest();
-            var req = new XMLHttpRequest();
-            var url = "https://geocoding-api.open-meteo.com/v1/search" + "?count=10&format=json&name=" + encodeURIComponent(q);
-            console.warn("[LocationSearch] #" + requestId + " Open-Meteo GET " + url);
-            req.open("GET", url);
-            req.onreadystatechange = function () {
-                if (req.readyState !== XMLHttpRequest.DONE)
-                    return;
-                if (requestId !== searchRequestId) {
-                    console.warn("[LocationSearch] #" + requestId + " Open-Meteo reply ignored (stale), HTTP " + req.status);
-                    return;
-                }
-                console.warn("[LocationSearch] #" + requestId + " Open-Meteo HTTP " + req.status + " " + req.statusText);
-                if (req.status === 200) {
-                    try {
-                        var list = JSON.parse(req.responseText).results || [];
-                        console.warn("[LocationSearch] #" + requestId + " Open-Meteo returned " + list.length + " item(s)");
-                        list.forEach(function (it) {
-                            collected.push({
-                                name: it.name || "",
-                                admin1: it.admin1 || "",
-                                country: it.country || "",
-                                countryCode: (it.country_code || "").toUpperCase(),
-                                latitude: parseFloat(it.latitude),
-                                longitude: parseFloat(it.longitude),
-                                timezone: it.timezone || "",
-                                elevation: it.elevation,
-                                provider: "Open-Meteo",
-                                providerKey: "open-meteo",
-                                localizedDisplayName: (it.name || "") + (it.admin1 ? ", " + it.admin1 : "") + (it.country ? ", " + it.country : "")
-                            });
-                        });
-                    } catch (e) {
-                        console.warn("[LocationSearch] #" + requestId + " Open-Meteo parse error: " + e);
-                    }
-                } else {
-                    console.warn("[LocationSearch] #" + requestId + " Open-Meteo body: " + String(req.responseText).substring(0, 400));
-                }
-                done();
-            };
-            req.send();
-        }
-
-        function fetchPhoton() {
-            queueRequest();
-            var req = new XMLHttpRequest();
-            // No "lang" parameter on purpose: Photon only accepts a few languages, so names
-            // come back in their local script (e.g. София).
-            var url = "https://photon.komoot.io/api?q=" + encodeURIComponent(q) + "&limit=15";
-            console.warn("[LocationSearch] #" + requestId + " Photon GET " + url);
-            req.open("GET", url);
-            req.onreadystatechange = function () {
-                if (req.readyState !== XMLHttpRequest.DONE)
-                    return;
-                if (requestId !== searchRequestId) {
-                    console.warn("[LocationSearch] #" + requestId + " Photon reply ignored (stale), HTTP " + req.status);
-                    return;
-                }
-                console.warn("[LocationSearch] #" + requestId + " Photon HTTP " + req.status + " " + req.statusText);
-                if (req.status === 200) {
-                    try {
-                        var feats = JSON.parse(req.responseText).features || [];
-                        // Prefer settlements / administrative areas over streets, shops, etc.
-                        var places = feats.filter(function (f) {
-                            var k = f.properties && f.properties.osm_key;
-                            return k === "place" || k === "boundary";
-                        });
-                        if (places.length === 0)
-                            places = feats;
-                        console.warn("[LocationSearch] #" + requestId + " Photon returned " + feats.length + " item(s), kept " + places.length);
-                        places.forEach(function (f) {
-                            var pr = f.properties || {};
-                            var c = f.geometry && f.geometry.coordinates;   // GeoJSON order: [lon, lat]
-                            if (!c || c.length < 2 || !pr.name)
-                                return;
-                            var parts = [];
-                            [pr.name, pr.county, pr.state, pr.country].forEach(function (part) {
-                                if (part && part.length > 0 && parts.every(function (x) {
-                                    return x.toLowerCase() !== part.toLowerCase();
-                                }))
-                                    parts.push(part);
-                            });
-                            collected.push({
-                                name: pr.name,
-                                admin1: pr.state || "",
-                                district: pr.county || "",
-                                country: pr.country || "",
-                                countryCode: (pr.countrycode || "").toUpperCase(),
-                                latitude: parseFloat(c[1]),
-                                longitude: parseFloat(c[0]),
-                                timezone: "",
-                                elevation: undefined,
-                                provider: "Photon",
-                                providerKey: "photon",
-                                localizedDisplayName: parts.join(", ")
-                            });
-                        });
-                    } catch (e) {
-                        console.warn("[LocationSearch] #" + requestId + " Photon parse error: " + e);
-                    }
-                } else {
-                    console.warn("[LocationSearch] #" + requestId + " Photon body: " + String(req.responseText).substring(0, 400));
-                }
-                done();
-            };
-            req.send();
-        }
-
-        fetchNominatim();
-        fetchOpenMeteo();
+        };
+        req.send();
     }
 
     Timer {
         id: searchDebounce
-        interval: 1000
+        interval: 500
         repeat: false
         onTriggered: searchSubPageRoot.performSearch(searchField.text)
     }
@@ -523,6 +404,9 @@ ColumnLayout {
                         searchSubPageRoot.searchBusy = false;
                         return;
                     }
+                    // Search starts after the debounce; show "Loading…" meanwhile instead of
+                    // flashing "No weather stations found".
+                    searchSubPageRoot.searchBusy = true;
                     searchDebounce.restart();
                 }
                 onAccepted: {
@@ -666,6 +550,16 @@ ColumnLayout {
             visible: configRoot.locationCheckState === 3
             type: Kirigami.MessageType.Error
             text: configRoot.locationCheckMessage
+        }
+
+        Kirigami.InlineMessage {
+            Layout.fillWidth: true
+            visible: true
+            type: Kirigami.MessageType.Information
+            text: i18n("Location search by %1 · Map data © %2",
+                       "<a href=\"https://photon.komoot.io\">Photon</a>",
+                       "<a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap contributors</a>")
+            onLinkActivated: link => Qt.openUrlExternally(link)
         }
     }
 }
