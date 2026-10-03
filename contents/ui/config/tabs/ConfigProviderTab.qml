@@ -25,18 +25,62 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 
-Kirigami.FormLayout {
+ColumnLayout {
     id: providerTab
+
+    // Plain ColumnLayout (like the Notifications page and the sibling-
+    // InlineMessage pattern in configAppearance.qml) instead of
+    // Kirigami.FormLayout: inside the FormLayout the InlineMessages ended up
+    // running under the settings page's vertical scrollbar.
+    Layout.fillWidth: true
+    Layout.alignment: Qt.AlignTop
+    spacing: Kirigami.Units.smallSpacing * 2
 
     /** Reference to the root KCM (configGeneral) for cfg_* properties, functions and state */
     required property var configRoot
 
+    // Section title with a thin rule, same look as the Notifications page.
+    component SectionHeader: RowLayout {
+        required property string title
+        Layout.fillWidth: true
+        spacing: 8
+
+        Label {
+            text: parent.title
+            font.bold: true
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 1
+            color: Kirigami.Theme.disabledTextColor
+            opacity: 0.5
+        }
+    }
+
+    // A Switch whose label wraps onto several lines instead of forcing the
+    // whole page wider than the (resizable) settings window.
+    component WrappingSwitch: Switch {
+        id: wrappingSwitch
+        Layout.fillWidth: true
+        Layout.minimumWidth: 0
+        contentItem: Label {
+            text: wrappingSwitch.text
+            font: wrappingSwitch.font
+            wrapMode: Text.Wrap
+            verticalAlignment: Text.AlignVCenter
+            leftPadding: wrappingSwitch.indicator && !wrappingSwitch.mirrored
+                ? wrappingSwitch.indicator.width + wrappingSwitch.spacing : 0
+            rightPadding: wrappingSwitch.indicator && wrappingSwitch.mirrored
+                ? wrappingSwitch.indicator.width + wrappingSwitch.spacing : 0
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // SECTION: Weather Provider
     // ═══════════════════════════════════════════════════════════════
-    Kirigami.Separator {
-        Kirigami.FormData.isSection: true
-        Kirigami.FormData.label: i18n("Weather Provider")
+    SectionHeader {
+        title: i18n("Weather Provider")
     }
 
     // The single place that flips Adaptive on/off. Both the Switch and its
@@ -63,7 +107,7 @@ Kirigami.FormLayout {
 
     // Adaptive toggle row
     RowLayout {
-        Kirigami.FormData.label: ""
+        Layout.fillWidth: true
         spacing: 12
         Switch {
             id: adaptiveSwitch
@@ -71,6 +115,9 @@ Kirigami.FormLayout {
             onToggled: providerTab.setAdaptive(checked)
         }
         Label {
+            Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            wrapMode: Text.Wrap
             text: i18n("Adaptive (auto-fallback)")
             font.bold: true
             verticalAlignment: Text.AlignVCenter
@@ -85,7 +132,6 @@ Kirigami.FormLayout {
 
     // Adaptive description - shown only when Adaptive is ON
     Kirigami.InlineMessage {
-        Kirigami.FormData.label: ""
         Layout.fillWidth: true
         visible: providerTab.configRoot.isAdaptive
         type: Kirigami.MessageType.Information
@@ -94,9 +140,13 @@ Kirigami.FormLayout {
 
     // Manual provider selector - always visible now; read-only (disabled)
     // while Adaptive is ON instead of being hidden.
+    Label {
+        text: i18n("Provider:")
+        Layout.topMargin: Kirigami.Units.smallSpacing
+    }
+
     ComboBox {
         id: providerCombo
-        Kirigami.FormData.label: i18n("Provider:")
         Layout.preferredWidth: 280
         model: providerTab.configRoot.providerModel
         textRole: "text"
@@ -115,7 +165,6 @@ Kirigami.FormLayout {
     }
 
     Label {
-        Kirigami.FormData.label: ""
         Layout.fillWidth: true
         wrapMode: Text.WordWrap
         visible: providerTab.configRoot.isAdaptive
@@ -126,7 +175,6 @@ Kirigami.FormLayout {
 
     // Provider sub-label
     Label {
-        Kirigami.FormData.label: ""
         Layout.fillWidth: true
         wrapMode: Text.WordWrap
         visible: providerTab.configRoot.isAdaptive === false
@@ -167,7 +215,6 @@ Kirigami.FormLayout {
     }
 
     Kirigami.InlineMessage {
-        Kirigami.FormData.label: ""
         Layout.fillWidth: true
         visible: providerTab.configRoot.locationCheckState === 2
         type: Kirigami.MessageType.Positive
@@ -175,7 +222,6 @@ Kirigami.FormLayout {
     }
 
     Kirigami.InlineMessage {
-        Kirigami.FormData.label: ""
         Layout.fillWidth: true
         visible: providerTab.configRoot.locationCheckState === 3
         type: Kirigami.MessageType.Error
@@ -186,28 +232,31 @@ Kirigami.FormLayout {
     // Shown only when OpenWeather or WeatherAPI (or another key-requiring
     // provider) is selected
     ColumnLayout {
-        Kirigami.FormData.label: {
-            if (providerTab.configRoot.isOpenWeather)
-                return i18n("OpenWeatherMap API Key:");
-            if (providerTab.configRoot.isPirateWeather)
-                return i18n("Pirate Weather API Key:");
-            if (providerTab.configRoot.isVisualCrossing)
-                return i18n("Visual Crossing API Key:");
-            if (providerTab.configRoot.isTomorrowIo)
-                return i18n("Tomorrow.io API Key:");
-            if (providerTab.configRoot.isStormGlass)
-                return i18n("StormGlass API Key:");
-            if (providerTab.configRoot.isWeatherbit)
-                return i18n("Weatherbit API Key:");
-            if (providerTab.configRoot.isQWeather)
-                return i18n("QWeather API Key:");
-            if (providerTab.configRoot.isAemet)
-                return i18n("AEMET API Key:");
-            return i18n("WeatherAPI.com API Key:");
-        }
         Layout.fillWidth: true
         spacing: 8
         visible: providerTab.configRoot.needsKeyUi && !providerTab.configRoot.isAdaptive
+
+        Label {
+            text: {
+                if (providerTab.configRoot.isOpenWeather)
+                    return i18n("OpenWeatherMap API Key:");
+                if (providerTab.configRoot.isPirateWeather)
+                    return i18n("Pirate Weather API Key:");
+                if (providerTab.configRoot.isVisualCrossing)
+                    return i18n("Visual Crossing API Key:");
+                if (providerTab.configRoot.isTomorrowIo)
+                    return i18n("Tomorrow.io API Key:");
+                if (providerTab.configRoot.isStormGlass)
+                    return i18n("StormGlass API Key:");
+                if (providerTab.configRoot.isWeatherbit)
+                    return i18n("Weatherbit API Key:");
+                if (providerTab.configRoot.isQWeather)
+                    return i18n("QWeather API Key:");
+                if (providerTab.configRoot.isAemet)
+                    return i18n("AEMET API Key:");
+                return i18n("WeatherAPI.com API Key:");
+            }
+        }
 
         RowLayout {
             Layout.fillWidth: true
@@ -370,7 +419,6 @@ Kirigami.FormLayout {
     }
 
     Kirigami.InlineMessage {
-        Kirigami.FormData.label: ""
         Layout.fillWidth: true
         visible: providerTab.configRoot.isOpenWeather && !providerTab.configRoot.isAdaptive && apiKeyField.text.trim().length > 0
         type: Kirigami.MessageType.Information
@@ -379,7 +427,6 @@ Kirigami.FormLayout {
     }
 
     Kirigami.InlineMessage {
-        Kirigami.FormData.label: ""
         Layout.fillWidth: true
         visible: providerTab.configRoot.isAemet && !providerTab.configRoot.isAdaptive
         showCloseButton: true
@@ -390,10 +437,13 @@ Kirigami.FormLayout {
 
     // ── QWeather API Host section ─────────────────────────────
     ColumnLayout {
-        Kirigami.FormData.label: i18n("QWeather API Host:")
         Layout.fillWidth: true
         spacing: 8
         visible: providerTab.configRoot.isQWeather && !providerTab.configRoot.isAdaptive
+
+        Label {
+            text: i18n("QWeather API Host:")
+        }
 
         Label {
             Layout.fillWidth: true
@@ -415,20 +465,23 @@ Kirigami.FormLayout {
     // ═══════════════════════════════════════════════════════════════
     // SECTION: Data Refresh
     // ═══════════════════════════════════════════════════════════════
-    Kirigami.Separator {
-        Kirigami.FormData.isSection: true
-        Kirigami.FormData.label: i18n("Data Refresh")
+    SectionHeader {
+        title: i18n("Data Refresh")
+        Layout.topMargin: Kirigami.Units.largeSpacing
     }
 
-    Switch {
-        Kirigami.FormData.label: ""
+    WrappingSwitch {
         text: i18n("Refresh weather automatically")
         checked: providerTab.configRoot.cfg_autoRefresh
         onToggled: providerTab.configRoot.cfg_autoRefresh = checked
     }
 
+    Label {
+        text: i18n("Interval:")
+        Layout.topMargin: Kirigami.Units.smallSpacing
+    }
+
     RowLayout {
-        Kirigami.FormData.label: i18n("Interval:")
         spacing: 8
         enabled: providerTab.configRoot.cfg_autoRefresh
         opacity: providerTab.configRoot.cfg_autoRefresh ? 1.0 : 0.5
